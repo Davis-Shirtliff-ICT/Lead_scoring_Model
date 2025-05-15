@@ -3,16 +3,12 @@ from pydantic import BaseModel
 import joblib
 from openai import OpenAI
 
-# Initialize FastAPI
 app = FastAPI()
-
-# Load your model
+ 
 model = joblib.load("Gradient_boosting.pkl")
 
-# Initialize OpenAI client with your API key
 client = OpenAI(api_key="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")
 
-# Define input structure
 class LeadData(BaseModel):
     quote_amount: float
     quote_age_days: int
@@ -22,7 +18,6 @@ class LeadData(BaseModel):
     past_interactions: str
     prior_orders: int
 
-# Scoring logic
 def get_lead_priority(data: LeadData):
     def score(value, thresholds, scores):
         for t, s in zip(thresholds, scores):
@@ -51,7 +46,6 @@ def get_lead_priority(data: LeadData):
     else:
         return "Low Priority"
 
-# GPT recommendation
 def get_openai_recommendation(data: LeadData, priority: str):
     prompt = (
         f"A customer with this profile:\n"
@@ -75,7 +69,6 @@ def get_openai_recommendation(data: LeadData, priority: str):
 
     return response.choices[0].message.content.strip()
 
-# API endpoint
 @app.post("/predict/")
 def predict_priority(data: LeadData):
     try:
