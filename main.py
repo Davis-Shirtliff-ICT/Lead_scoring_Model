@@ -73,7 +73,7 @@ def get_openai_recommendation(data: LeadData, priority: str):
 def predict_priority(data: LeadData):
     try:
         priority = get_lead_priority(data)
-        recommendation = get_openai_recommendation(data, priority)
+        recommendation = 'The current quota, is exceeded, check for a different API KEY!!'
         return {
             "lead_priority": priority,
             "recommendation": recommendation
