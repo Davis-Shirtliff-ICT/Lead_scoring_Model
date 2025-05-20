@@ -1,0 +1,12 @@
+fastapi
+uvicorn
+pandas
+numpy
+scikit-learn
+joblib
+pydantic
+requests
+transformers
+torch
+huggingface_hub
+openai>=1.0.0
