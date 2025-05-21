@@ -1,12 +1,13 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
-import openai
-import os
-
-# Set your OpenAI API key
-openai.api_key = "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"
+import joblib
+from openai import OpenAI
 
 app = FastAPI()
+ 
+model = joblib.load("Gradient_boosting.pkl")
+
+client = OpenAI(api_key="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")
 
 class LeadData(BaseModel):
     quote_amount: float
@@ -17,7 +18,7 @@ class LeadData(BaseModel):
     past_interactions: str
     prior_orders: int
 
-def get_lead_priority(data: LeadData) -> str:
+def get_lead_priority(data: LeadData):
     def score(value, thresholds, scores):
         for t, s in zip(thresholds, scores):
             if value <= t:
@@ -45,7 +46,7 @@ def get_lead_priority(data: LeadData) -> str:
     else:
         return "Low Priority"
 
-def get_recommendation(data: LeadData, priority: str) -> str:
+def get_openai_recommendation(data: LeadData, priority: str):
     prompt = (
         f"A customer with this profile:\n"
         f"- Quote Amount: {data.quote_amount}\n"
@@ -56,27 +57,26 @@ def get_recommendation(data: LeadData, priority: str) -> str:
         f"- Past Interactions: {data.past_interactions}\n"
         f"- Prior Orders: {data.prior_orders}\n"
         f"Lead priority is {priority}.\n\n"
-        f"What is the best follow-up action a salesperson should take to convert this lead? Provide a detailed recommendation."
+        f"What is the best follow-up action a salesperson should take to convert this lead?"
     )
-    try:
-        response = openai.chat.completions.create(
-            model="gpt-3.5-turbo",  # or use "gpt-4" if available in your plan
-            messages=[
-                {"role": "system", "content": "You are a B2B sales expert."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.7,
-            max_tokens=150
-        )
-        return response.choices[0].message.content.strip()
-    except Exception as e:
-        return f"Error getting recommendation: {str(e)}"
+
+    response = client.chat.completions.create(
+        model="gpt-3.5-turbo",
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.7,
+        max_tokens=150
+    )
+
+    return response.choices[0].message.content.strip()
 
 @app.post("/predict/")
 def predict_priority(data: LeadData):
-    priority = get_lead_priority(data)
-    recommendation = get_recommendation(data, priority)
-    return {
-        "lead_priority": priority,
-        "recommendation": recommendation
-    }
+    try:
+        priority = get_lead_priority(data)
+        recommendation = 'The current quota, is exceeded, check for a different API KEY!!'
+        return {
+            "lead_priority": priority,
+            "recommendation": recommendation
+        }
+    except Exception as e:
+        return {"error": str(e)}
