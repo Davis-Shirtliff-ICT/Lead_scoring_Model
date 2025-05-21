@@ -1,13 +1,13 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
-import joblib
-from openai import OpenAI
+import pandas as pd
+import openai
+
+openai.api_key = "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"
 
 app = FastAPI()
- 
-model = joblib.load("Gradient_boosting.pkl")
 
-client = OpenAI(api_key="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")
+df_products = pd.read_csv("products.csv")
 
 class LeadData(BaseModel):
     quote_amount: float
@@ -17,8 +17,13 @@ class LeadData(BaseModel):
     product_type: str
     past_interactions: str
     prior_orders: int
+    budget_fit: str  # "High", "Medium", "Low"
+    decision_authority: str  # "Yes", "No"
+    clear_need: str  # "Yes", "Unclear", "No"
+    purchase_timeline: str  # "Immediate", "This Quarter", "Later"
 
-def get_lead_priority(data: LeadData):
+ 
+def get_lead_priority(data: LeadData) -> str:
     def score(value, thresholds, scores):
         for t, s in zip(thresholds, scores):
             if value <= t:
@@ -46,9 +51,28 @@ def get_lead_priority(data: LeadData):
     else:
         return "Low Priority"
 
-def get_openai_recommendation(data: LeadData, priority: str):
+def calculate_bant_score(data: LeadData) -> int:
+    budget_score = {"High": 30, "Medium": 20, "Low": 10}.get(data.budget_fit, 0)
+    authority_score = 20 if data.decision_authority == "Yes" else 0
+    need_score = {"Yes": 30, "Unclear": 15, "No": 0}.get(data.clear_need, 0)
+    timeline_score = {"Immediate": 20, "This Quarter": 10, "Later": 5}.get(data.purchase_timeline, 0)
+    return budget_score + authority_score + need_score + timeline_score
+
+def get_relevant_products(product_type: str, top_n: int = 5):
+    mask = df_products['category'].str.contains(product_type, case=False, na=False) | \
+           df_products['tags'].str.contains(product_type, case=False, na=False)
+    filtered = df_products[mask]
+    if filtered.empty:
+        filtered = df_products
+    sample = filtered.sample(n=min(top_n, len(filtered)), random_state=42)
+    return sample[['name', 'category', 'tags', 'price']].to_dict(orient="records")
+
+def get_recommendation(data: LeadData, priority: str, bant_score: int, products: list) -> str:
+    product_text = "\n".join(
+        [f"- {p['name']} ({p['category']}): KES {p['price']} — Tags: {p['tags']}" for p in products]
+    )
     prompt = (
-        f"A customer with this profile:\n"
+        f"A sales engineer is engaging a lead with this profile:\n"
         f"- Quote Amount: {data.quote_amount}\n"
         f"- Quote Age: {data.quote_age_days} days\n"
         f"- Customer Type: {data.customer_type}\n"
@@ -56,27 +80,34 @@ def get_openai_recommendation(data: LeadData, priority: str):
         f"- Product Type: {data.product_type}\n"
         f"- Past Interactions: {data.past_interactions}\n"
         f"- Prior Orders: {data.prior_orders}\n"
-        f"Lead priority is {priority}.\n\n"
-        f"What is the best follow-up action a salesperson should take to convert this lead?"
+        f"- BANT Score: {bant_score}/100\n"
+        f"Lead Priority: {priority}\n\n"
+        f"Recommended Products:\n{product_text}\n\n"
+        f"As an AI sales assistant, suggest a detailed plan to convert this lead. Mention how to use the products above in your plan."
     )
-
-    response = client.chat.completions.create(
-        model="gpt-3.5-turbo",
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.7,
-        max_tokens=150
-    )
-
-    return response.choices[0].message.content.strip()
-
-@app.post("/predict/")
-def predict_priority(data: LeadData):
     try:
-        priority = get_lead_priority(data)
-        recommendation = 'The current quota, is exceeded, check for a different API KEY!!'
-        return {
-            "lead_priority": priority,
-            "recommendation": recommendation
-        }
+        response = openai.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "You are an AI sales assistant."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.7,
+            max_tokens=300
+        )
+        return response.choices[0].message.content.strip()
     except Exception as e:
-        return {"error": str(e)}
+        return f"Error generating recommendation: {e}"
+ 
+@app.post("/predict/")
+def predict(data: LeadData):
+    priority = get_lead_priority(data)
+    bant_score = calculate_bant_score(data)
+    products = get_relevant_products(data.product_type)
+    recommendation = get_recommendation(data, priority, bant_score, products)
+    return {
+        "lead_priority": priority,
+        "bant_score": bant_score,
+        "recommended_products": products,
+        "recommendation": recommendation
+    }
